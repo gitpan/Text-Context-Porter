@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use Lingua::Stem::En;
 
-our $VERSION = "1.0";
+our $VERSION = "1.1";
 
 =head1 NAME
 
@@ -49,10 +49,12 @@ sub para_class {"Text::Context::Para::Porter"}
 
 sub paras {
     my $self = shift;
-    my $max_len = shift || 80;
+    my $max_len = shift || 150;
     $self->prepare_text;
     $self->score_para($_) for @{$self->{text_a}};
     my @paras = $self->get_appropriate_paras;
+    return map { $_->slim($max_len / @paras) } @paras;
+
 }
 
 sub score_para {
@@ -104,9 +106,38 @@ sub marked_up {
     return $output;
 }
 
+sub slim {
+    my ($self, $max_weight) = @_;
+    $self->{content} =~ s/^\s+//;
+    $self->{content} =~ s/\s+$//;
+    return $self if length $self->{content} <= $max_weight;
+    my %words = map {$_ => 1 } @{$self->{marked_words}};
+    my $old_length = -1;
+    my $this_length = length $self->{content};
+    do {{
+        if ($old_length == $this_length) { return $self; } # Give up
+        $old_length = $this_length;
+
+        $self->{content} =~ /^\W*(\w+)/;
+        my $stemmed = Lingua::Stem::En::stem({ -words => [$1]});
+        $stemmed = $stemmed->[0];
+        if (!exists $words{$stemmed}) { 
+            $self->{content} =~ s/^\W*(\w+)\W*/.../ 
+        };
+
+        $self->{content} =~ /(\w+)\W*$/;
+        $stemmed = Lingua::Stem::En::stem({ -words => [$1]});
+        if (!exists $words{$stemmed}) {
+            $self->{content} =~ s/(\w+)\W*$/.../ ;
+        };
+        $this_length = length $self->{content};
+    }} until ($this_length <= $max_weight);
+
+    return $self;
+}
 =head1 COPYRIGHT
 
-  Copyright (C) 2004 Simon Cozens
+  Copyright (C) 2004,2006 Simon Cozens
 
 You may use and redistribute this module under the same terms as Perl
 itself.
